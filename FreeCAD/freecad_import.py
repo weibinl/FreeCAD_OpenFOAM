@@ -1,3 +1,4 @@
-import sys
-sys.path.append('/usr/lib/freecad/lib')
-import FreeCAD
+def import_freecad_path(FREECAD_PAHT):
+    import sys
+    sys.path.append(FREECAD_PAHT)
+    import FreeCAD
