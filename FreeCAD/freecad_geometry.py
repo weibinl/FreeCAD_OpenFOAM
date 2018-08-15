@@ -1,6 +1,7 @@
 from freecad_import import import_freecad_path
 FREECADPATH='/usr/lib/freecad/lib'
-import_freecad_path(FREECADPATH)
+FreeCAD=import_freecad_path(FREECADPATH)
+# this will import the FreeCAD module
 
 FREECAD_DOC_NAME='python_scrit_test'
 FREECAD_DOC_PATH='/home/weibin/FREECAD_DOC/'
