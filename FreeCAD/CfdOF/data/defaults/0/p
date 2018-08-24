@@ -1,0 +1,129 @@
+%{%(solver/solverName%)
+%:interFoam multiphaseInterFoam
+%:default
+%[_header%]
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+%{%(solver/solverName%)
+%:hisa
+dimensions      [1 -1 -2 0 0 0 0];
+
+internalField   uniform %(initialValues/Pressure%);
+%:default
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform %(initialValues/KinematicPressure%);
+%}
+
+boundaryField
+{
+
+%{%(boundaries%)
+%{%(boundaries/%(0%)/BoundaryType%)
+%:empty
+%[0/_boundary_empty%]
+%:wall
+%{%(solver/solverName%)
+%:hisa
+    %(0%)
+    {
+        type        characteristicWallPressure;
+        value       $internalField;
+    }
+%:default
+%[0/_boundary_zeroGradient%]
+%}
+%:inlet
+%{%(boundaries/%(0%)/BoundarySubtype%)
+%:totalPressure
+    %(0%)
+    {
+        type        totalPressure;
+        p0          uniform %(boundaries/%(0%)/Pressure%);
+        value       $internalField;
+    }
+%:staticPressure
+    %(0%)
+    {
+        type        fixedValue;
+%{%(solver/solverName%)
+%:hisa
+        value       uniform %(boundaries/%(0%)/Pressure%);
+%:default
+        value       uniform %(boundaries/%(0%)/KinematicPressure%);
+%}
+    }
+%:default
+%[0/_boundary_zeroGradient%]
+%}
+%:outlet
+%{%(boundaries/%(0%)/BoundarySubtype%)
+%:staticPressure
+    %(0%)
+    {
+        type        fixedValue;
+%{%(solver/solverName%)
+%:hisa
+        value       uniform %(boundaries/%(0%)/Pressure%);
+%:default
+        value       uniform %(boundaries/%(0%)/KinematicPressure%);
+%}
+    }
+%:default
+%[0/_boundary_zeroGradient%]
+%}
+%:farField
+%{%(boundaries/%(0%)/BoundarySubtype%)
+%:characteristic
+    %(0%)
+    {
+        type        characteristicFarfieldPressure;
+        UInf        ( %(boundaries/%(0%)/Ux%) %(boundaries/%(0%)/Uy%) %(boundaries/%(0%)/Uz%) );
+        pInf        %(boundaries/%(0%)/Pressure%);
+        TInf        %(boundaries/%(0%)/Temperature%);
+        gamma       1.4; //TODO
+        value       $internalField;
+    }
+%}
+%:open
+    %(0%)
+    {
+        type        totalPressure;
+        p0          uniform %(boundaries/%(0%)/Pressure%);
+        value       $internalField;
+    }
+%:constraint
+%[0/_boundary_constraint%]
+%:baffle
+%{%(boundaries/%(0%)/BoundarySubtype%)
+%:porousBaffle
+%{%(0%)_master %(0%)_slave
+    %(0%)
+    {
+        type        porousBafflePressure;
+        patchType   cyclic;
+        length      1.0;
+        I           %(boundaries/%(1%)/PressureDropCoeff%);
+        D           0;
+        value       $internalField;
+    }
+%}
+%}
+%}
+
+%}
+%{defaultFaces
+%[0/_boundary_zeroGradient%]
+%}
+
+}
+
+// ************************************************************************* //
+%}
