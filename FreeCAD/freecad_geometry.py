@@ -1,4 +1,4 @@
-
+import os
 FREECADPATH='/usr/lib/freecad/lib'
 import sys
 sys.path.append(FREECADPATH)
@@ -12,6 +12,10 @@ import CfdSolverFoam
 import CfdPhysicsSelection
 import CfdFluidBoundary
 import CfdMesh
+import CfdMeshTools
+import Part
+import tempfile
+import CfdTools
 # this will import the FreeCAD module
 
 FREECAD_DOC_NAME='python_scrit_test'
@@ -220,30 +224,32 @@ FreeCAD.ActiveDocument.CfdFluidBoundary002.References.append(('Cylinder', 'Face1
 FreeCAD.ActiveDocument.recompute()
 
 ##start the mesh
-CfdMesh.makeCfdMesh('Cylinder_Mesh')
+Cylinder_Mesh=CfdMesh.makeCfdMesh('Cylinder_Mesh')
 FreeCAD.ActiveDocument.ActiveObject.Part = FreeCAD.ActiveDocument.CYLINDER_1
 analysis.addObject(FreeCAD.ActiveDocument.ActiveObject)
 
 FreeCAD.ActiveDocument.Cylinder_Mesh.CharacteristicLengthMax = '0 mm'
-FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = 'cfMesh'
+FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = "snappyHexMesh"
 FreeCAD.ActiveDocument.Cylinder_Mesh.ElementDimension = '3D'
 FreeCAD.ActiveDocument.Cylinder_Mesh.CellsBetweenLevels = 3
 FreeCAD.ActiveDocument.Cylinder_Mesh.EdgeRefinement = 0
 FreeCAD.ActiveDocument.Cylinder_Mesh.PointInMesh = {'y': 0.0, 'x': 0.0, 'z': 0.0}
 
-FreeCAD.ActiveDocument.Cylinder_Mesh.CharacteristicLengthMax = '0 mm'
-FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = 'cfMesh'
-FreeCAD.ActiveDocument.Cylinder_Mesh.ElementDimension = '3D'
-FreeCAD.ActiveDocument.Cylinder_Mesh.CellsBetweenLevels = 3
-FreeCAD.ActiveDocument.Cylinder_Mesh.EdgeRefinement = 0
-FreeCAD.ActiveDocument.Cylinder_Mesh.PointInMesh = {'y': 0.0, 'x': 0.0, 'z': 0.0}
+cart_mesh=CfdMeshTools.CfdMeshTools(Cylinder_Mesh)
+cart_mesh.get_tmp_file_paths()
+cart_mesh.setup_mesh_case_dir()
+cart_mesh.get_region_data()
+cart_mesh.write_mesh_case()
+cart_mesh.write_part_file()
 
-FreeCAD.ActiveDocument.Cylinder_Mesh.CharacteristicLengthMax = '0.23 mm'
-FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = 'cfMesh'
-FreeCAD.ActiveDocument.Cylinder_Mesh.ElementDimension = '3D'
-FreeCAD.ActiveDocument.Cylinder_Mesh.CellsBetweenLevels = 3
-FreeCAD.ActiveDocument.Cylinder_Mesh.EdgeRefinement = 0
-FreeCAD.ActiveDocument.Cylinder_Mesh.PointInMesh = {'y': 0.0, 'x': 0.0, 'z': 0.0}
+tmpdir = tempfile.gettempdir()
+meshCaseDir = os.path.join(tmpdir, 'meshCase')
+cmd = CfdTools.makeRunCommand('./Allmesh', meshCaseDir, source_env=False)
+os.system(cmd[2])
+
+## setup the simulation and write the file
+
+
 
 FreeCAD.ActiveDocument.saveAs(FREECAD_DOC_PATH+FREECAD_DOC_NAME+FREECAD_DOC_EXTENSION)
 

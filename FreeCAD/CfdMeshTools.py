@@ -26,6 +26,9 @@
 __title__ = "Tools for mesh generation using snappyHexMesh, cfMesh and gmsh"
 __author__ = "AB, JH, OO, Bernd Hahnebach"
 __url__ = "http://www.freecadweb.org"
+FREECADPATH='/usr/lib/freecad/lib'
+import sys
+sys.path.append(FREECADPATH)
 
 import FreeCAD
 import Fem
@@ -38,6 +41,7 @@ try:
     from femobjects import _FemMeshGmsh
 except ImportError:  # Backward compat
     from PyObjects import _FemMeshGmsh
+    
 import Units
 import tempfile
 import os
@@ -106,10 +110,9 @@ class CfdMeshTools:
         twoDPlanes = []
         analysis_obj = CfdTools.getParentAnalysisObject(self.mesh_obj)
         boundaries = CfdTools.getCfdBoundaryGroup(analysis_obj)
-            for b in boundaries:
-                if b.BoundarySettings['BoundaryType'] == 'constraint' and \
-                   b.BoundarySettings['BoundarySubtype'] == 'twoDBoundingPlane':
-                    twoDPlanes.append(b.Name)
+        for b in boundaries:
+            if b.BoundarySettings['BoundaryType'] == 'constraint' and \
+                b.BoundarySettings['BoundarySubtype'] == 'twoDBoundingPlane':twoDPlanes.append(b.Name)
 
         if self.dimension == '2D':
             self.two_d_settings['ConvertTo2D'] = True
