@@ -247,20 +247,9 @@ cart_mesh.write_part_file()
 
 tmpdir = tempfile.gettempdir()
 meshCaseDir = os.path.join(tmpdir,'meshCase')
+
 cmd = CfdTools.makeRunCommand('./Allmesh', meshCaseDir, source_env=False)
 os.system(cmd[2])
-
-
-
-
-
-
-
-
-
-
-
-
 
 ## setup solution 
 wd=CfdTools.getTempWorkingDir()
@@ -313,7 +302,8 @@ settings = {
             'meshType': mesh_obj.Proxy.Type,
             'solver': solverSettingsDict,
             'system': {},
-            'runChangeDictionary':False
+            'runChangeDictionary':False,
+            'createPatchesFromSnappyBaffles': False
             }
 
 def processSystemSettings():
@@ -667,6 +657,39 @@ processInitialisationZoneProperties()
 
 TemplateBuilder.TemplateBuilder(case_folder, template_path, settings)
 
+def floatEqual(a, b):
+    """ Test whether a and b are equal within an absolute and relative tolerance """
+    reltol = 10*sys.float_info.epsilon
+    abstol = 1e-12  # Seems to be necessary on file read/write
+    return abs(a-b) < abstol or abs(a - b) <= reltol*max(abs(a), abs(b))
+
+def isSameGeometry(shape1, shape2):
+    """ Copy of FemMeshTools.is_same_geometry, with fixes """
+    # Check Area, CenterOfMass because non-planar shapes might not have more than one vertex defined
+    same_Vertexes = 0
+    # Bugfix: below was 1 - did not work for non-planar shapes
+    if  len(shape1.Vertexes) > 0:
+        # compare CenterOfMass
+        # Bugfix: Precision seems to be lost on load/save
+        if not floatEqual(shape1.CenterOfMass[0], shape2.CenterOfMass[0]) or \
+                not floatEqual(shape1.CenterOfMass[1], shape2.CenterOfMass[1]) or \
+                not floatEqual(shape1.CenterOfMass[2], shape2.CenterOfMass[2]):
+            return False
+        elif not floatEqual(shape1.Area, shape2.Area):
+            return False
+        else:
+            # compare the Vertices
+            for vs1 in shape1.Vertexes:
+                for vs2 in shape2.Vertexes:
+                    if floatEqual(vs1.X, vs2.X) and floatEqual(vs1.Y, vs2.Y) and floatEqual(vs1.Z, vs2.Z):
+                        same_Vertexes += 1
+                        # Bugfix: was 'continue' - caused false-negative with repeated vertices
+                        break
+            if same_Vertexes == len(shape1.Vertexes):
+                return True
+            else:
+                return False
+
 def matchFacesToTargetShape(ref_lists, shape):
     """ This function does a geometric matching of groups of faces much faster than doing face-by-face search
     :param ref_lists: List of lists of references - outer list is 'group' (e.g. boundary); refs are tuples
@@ -688,6 +711,73 @@ def matchFacesToTargetShape(ref_lists, shape):
                 raise RuntimeError("Referenced face '{}:{}' not found - face may "
                                    "have been deleted".format(br[0], br[1]))
             src_face_list.append((bf, i, br))
+
+    def compFn(x, y):
+        if floatEqual(x, y):
+            return 0
+        elif x < y:
+            return -1
+        else:
+            return 1
+
+    # Sort boundary face list by centre of mass, x then y then z in case all in plane
+    src_face_list.sort(cmp=compFn, key=lambda bf: bf[0].CenterOfMass.z)
+    src_face_list.sort(cmp=compFn, key=lambda bf: bf[0].CenterOfMass.y)
+    src_face_list.sort(cmp=compFn, key=lambda bf: bf[0].CenterOfMass.x)
+
+    # Same sorting on mesh face list
+    mesh_face_list.sort(cmp=compFn, key=lambda mf: mf[0].CenterOfMass.z)
+    mesh_face_list.sort(cmp=compFn, key=lambda mf: mf[0].CenterOfMass.y)
+    mesh_face_list.sort(cmp=compFn, key=lambda mf: mf[0].CenterOfMass.x)
+
+    # Find faces with matching CofM
+    i = 0
+    j = 0
+    j_match_start = 0
+    matching = False
+    candidate_mesh_faces = []
+    for mf in mesh_face_list:
+        candidate_mesh_faces.append([])
+    while i < len(src_face_list) and j < len(mesh_face_list):
+        bf = src_face_list[i][0]
+        mf = mesh_face_list[j][0]
+        if floatEqual(bf.CenterOfMass.x, mf.CenterOfMass.x):
+            if floatEqual(bf.CenterOfMass.y, mf.CenterOfMass.y):
+                if floatEqual(bf.CenterOfMass.z, mf.CenterOfMass.z):
+                    candidate_mesh_faces[j].append((i, src_face_list[i][1], src_face_list[i][2]))
+                    cmp = 0
+                else:
+                    cmp = (-1 if bf.CenterOfMass.z < mf.CenterOfMass.z else 1)
+            else:
+                cmp = (-1 if bf.CenterOfMass.y < mf.CenterOfMass.y else 1)
+        else:
+            cmp = (-1 if bf.CenterOfMass.x < mf.CenterOfMass.x else 1)
+        if cmp == 0:
+            if not matching:
+                j_match_start = j
+            j += 1
+            matching = True
+        elif cmp < 0:
+            i += 1
+            if matching:
+                j = j_match_start
+            matching = False
+        elif cmp > 0:
+            j += 1
+            matching = False
+
+    # Do comprehensive matching, and reallocate to original index
+    successful_candidates = []
+    for mf in mesh_face_list:
+        successful_candidates.append([])
+    for j in range(len(candidate_mesh_faces)):
+        for k in range(len(candidate_mesh_faces[j])):
+            i, nb, bref = candidate_mesh_faces[j][k]
+            if isSameGeometry(src_face_list[i][0], mesh_face_list[j][0]):
+                orig_idx = mesh_face_list[j][1]
+                successful_candidates[orig_idx].append((nb, bref))
+
+    return successful_candidates
 
 
 
@@ -782,4 +872,73 @@ def setupPatchNames():
             }
 
 setupPatchNames()
-settings['createPatchesFromSnappyBaffles'] = False
+TemplateBuilder.TemplateBuilder(case_folder, template_path, settings)
+
+def writeMesh():
+        """ Convert or copy mesh files """
+        if mesh_obj.Proxy.Type == "CfdMesh":
+            import CfdMeshTools
+            # Move Cartesian mesh files from temporary mesh directory to case directory
+            cart_mesh = CfdMeshTools.CfdMeshTools(mesh_obj)
+            cart_mesh = cart_mesh
+            if mesh_obj.MeshUtility == "cfMesh":
+                print("Writing Cartesian mesh\n")
+                # cart_mesh.get_tmp_file_paths("cfMesh")  # Update tmp file locations
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(case_folder, 'constant', 'polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(case_folder, 'constant', 'triSurface'))
+                # shutil.copy2(cart_mesh.temp_file_meshDict, os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'meshDict'),
+                             os.path.join(case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'Allmesh'),case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'log.cartesianMesh'),case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'log.surfaceFeatureEdges'),case_folder)
+
+            elif mesh_obj.MeshUtility == "snappyHexMesh":
+                print("Writing snappyHexMesh generated Cartesian mesh\n")
+                # cart_mesh.get_tmp_file_paths("snappyHexMesh")  # Update tmp file locations
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(case_folder,'constant','polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(case_folder,'constant','triSurface'))
+                # shutil.copy2(cart_mesh.temp_file_blockMeshDict, os.path.join(self.case_folder,'system'))
+                # shutil.copy2(cart_mesh.temp_file_snappyMeshDict, os.path.join(self.case_folder,'system'))
+                # shutil.copy2(cart_mesh.temp_file_surfaceFeatureExtractDict, os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'blockMeshDict'),
+                             os.path.join(case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'snappyHexMeshDict'),
+                             os.path.join(case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'surfaceFeatureExtractDict'),
+                             os.path.join(case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'Allmesh'), case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.blockMesh'), case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.surfaceFeatureExtract'), case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.snappyHexMesh'), case_folder)
+
+            elif mesh_obj.MeshUtility == "gmsh":
+                print("Writing gmsh generated mesh\n")
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(case_folder,'constant','polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(case_folder,'constant','gmsh'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'Allmesh'), case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.gmshToFoam'), case_folder)
+
+            if mesh_obj.ElementDimension == '2D':
+                shutil.copy2(os.path.join(os.path.join(cart_mesh.meshCaseDir,'system'),'extrudeMeshDict'), 
+                             os.path.join(case_folder, 'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.extrudeMesh'), case_folder)
+        else:
+            raise RuntimeError("Unrecognised mesh type")
+
+
+writeMesh()
+fname = os.path.join(case_folder, "Allrun")
+import stat
+s = os.stat(fname)
+os.chmod(fname, s.st_mode | stat.S_IEXEC)
+
+# Move mesh files, after being edited, to polyMesh.org
+CfdTools.movePolyMesh(case_folder)
+print(case_folder)
+os.system("cd /tmp")
+os.system("cp -r /tmp/case/ /home/weibin/freecad_create_openfoam/")
+os.system("cd /home/weibin/freecad_create_openfoam/case && bash Allrun")
