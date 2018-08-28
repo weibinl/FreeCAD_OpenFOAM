@@ -1,359 +1,154 @@
-import os
-FREECADPATH='/usr/lib/freecad/lib'
-import sys
-sys.path.append(FREECADPATH)
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2015 - Qingfeng Xia <qingfeng.xia eng ox ac uk>         *
+# *   Copyright (c) 2017 - Alfred Bogaers (CSIR) <abogaers@csir.co.za>      *
+# *   Copyright (c) 2017 - Johan Heyns (CSIR) <jheyns@csir.co.za>           *
+# *   Copyright (c) 2017 - Oliver Oxtoby (CSIR) <ooxtoby@csir.co.za>        *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
 import FreeCAD
-import Units
+import CfdTools
+from CfdTools import cfdMessage
+import os
+import os.path
 import shutil
-import Mesh
-import MeshPart
-import Part
+from PySide import QtCore
+from PySide.QtCore import QRunnable, QObject
+import Units
 import TemplateBuilder
 
-sys.path.insert(0,'/home/weibin/git/freecad_openfoam/FreeCAD_OpenFOAM/FreeCAD')
-import CfdAnalysis
-import CfdFluidMaterial
-import CfdInitialiseFlowField
-import CfdSolverFoam
-import CfdPhysicsSelection
-import CfdFluidBoundary
-import CfdMesh
-import tempfile
-import CfdTools
-import CfdMeshTools
 
-# this will import the FreeCAD module
+class CfdCaseWriterFoam:
+    def __init__(self, analysis_obj):
+        self.analysis_obj = analysis_obj
+        self.solver_obj = CfdTools.getSolver(analysis_obj)
+        self.physics_model, isPresent = CfdTools.getPhysicsModel(analysis_obj)
+        self.mesh_obj = CfdTools.getMesh(analysis_obj)
+        self.material_objs = CfdTools.getMaterials(analysis_obj)
+        self.bc_group = CfdTools.getCfdBoundaryGroup(analysis_obj)
+        self.initial_conditions, isPresent = CfdTools.getInitialConditions(analysis_obj)
+        self.porousZone_objs = CfdTools.getPorousZoneObjects(analysis_obj)
+        self.initialisationZone_objs = CfdTools.getInitialisationZoneObjects(analysis_obj)
+        self.zone_objs = CfdTools.getZoneObjects(analysis_obj)
+        self.mesh_generated = False
 
-FREECAD_DOC_NAME='python_scrit_test2'
-FREECAD_DOC_PATH='/home/weibin/FREECAD_DOC/'
-FREECAD_DOC_EXTENSION='.fcstd' 
-# extension to use when sae freecad file
+    def writeCase(self):
+        """ writeCase() will collect case settings, and finally build a runnable case. """
+        cfdMessage("Start to write case to folder {}\n".format(self.solver_obj.WorkingDir))
+        cwd = os.curdir
+        if not os.path.exists(self.solver_obj.WorkingDir):
+            raise IOError("Path " + self.solver_obj.WorkingDir + " does not exist.")
 
-FreeCAD.newDocument(FREECAD_DOC_NAME)
-FreeCAD.ActiveDocument=FreeCAD.getDocument(FREECAD_DOC_NAME)
-CYLINDER_1=FreeCAD.ActiveDocument.addObject('Part::Cylinder','CYLINDER_1')
-CYLINDER_1.Radius=5
+        # Perform initialisation here rather than __init__ in case of path changes
+        self.case_folder = os.path.join(self.solver_obj.WorkingDir, self.solver_obj.InputCaseName)
+        self.case_folder = os.path.expanduser(os.path.abspath(self.case_folder))
+        self.mesh_file_name = os.path.join(self.case_folder, self.solver_obj.InputCaseName, u".unv")
 
-#Gui.activateWorkbench("CfdOFWorkbench")
+        self.template_path = os.path.join(CfdTools.get_module_path(), "data", "defaults")
 
-analysis = CfdAnalysis.makeCfdAnalysis('CfdAnalysis')
+        solverSettingsDict = CfdTools.getSolverSettings(self.solver_obj)
 
-analysis.addObject(CfdFluidMaterial.makeCfdFluidMaterial('FluidProperties'))
-analysis.addObject(CfdInitialiseFlowField.makeCfdInitialFlowField())
-solver=analysis.addObject(CfdSolverFoam.makeCfdSolverFoam())
-physics_model=obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython", "PhysicsModel")
-physics_model.addProperty("App::PropertyEnumeration", "Time", "Physics modelling","Resolve time dependence")
-physics_model.Time = ['Steady', 'Transient']
-physics_model.Time = 'Steady'
-
-physics_model.addProperty("App::PropertyEnumeration", "Flow", "Physics modelling","Flow algorithm")
-physics_model.Flow = ['Incompressible', 'Compressible', 'HighMachCompressible']
-physics_model.Flow = 'Incompressible'
-
-physics_model.addProperty("App::PropertyEnumeration", "Thermal", "Physics modelling","Thermal modelling")
-physics_model.Thermal = ['None', 'Buoyancy', 'Energy']
-physics_model.Thermal = 'None'
-
-physics_model.addProperty("App::PropertyEnumeration", "Phase", "Physics modelling","Type of phases present")
-physics_model.Phase = ['Single', 'FreeSurface']
-physics_model.Phase = 'Single'
-
-
-physics_model.addProperty("App::PropertyEnumeration", "Turbulence", "Physics modelling","Type of turbulence modelling")
-physics_model.Turbulence = ['Inviscid', 'Laminar', 'RANS']
-physics_model.Turbulence = 'Laminar'
-
-physics_model.addProperty("App::PropertyEnumeration", "TurbulenceModel", "Physics modelling","Turbulence model")
-physics_model.TurbulenceModel = ['kOmegaSST']
-
-physics_model.addProperty("App::PropertyAcceleration", "gx", "Physics modelling","Gravitational acceleration vector (x component)")
-physics_model.gx = '0 m/s^2'
-
-physics_model.addProperty("App::PropertyAcceleration", "gy", "Physics modelling","Gravitational acceleration vector (y component)")
-physics_model.gy = '-9.81 m/s^2'
-
-physics_model.addProperty("App::PropertyAcceleration", "gz", "Physics modelling","Gravitational acceleration vector (z component)")
-physics_model.gz = '0 m/s^2'
-
-#set up material
-mat = FreeCAD.ActiveDocument.FluidProperties
-mat.Density = '1e+03 kg/m^3'
-mat.DynamicViscosity = '0.001 kg/(m*s)'
-
-# Values are converted to SI units and stored (eg. m/s)
-init = FreeCAD.ActiveDocument.InitialiseFields.InitialVariables
-init['PotentialFoam'] = True
-init['UseInletUPValues'] = False
-init['Ux'] = 0.0
-init['Uy'] = 0.0
-init['Uz'] = 0.0
-init['Pressure'] = 0.0
-init['alphas'] = {}
-init['UseInletTemperatureValues'] = False
-init['Temperature'] = 290.0
-init['UseInletTurbulenceValues'] = False
-init['omega'] = 0.994837673637
-init['k'] = 0.01
-init['Inlet'] = ''
-FreeCAD.ActiveDocument.InitialiseFields.InitialVariables = init
-
-# Values are converted to SI units and stored (eg. m/s)
-analysis.addObject(CfdFluidBoundary.makeCfdFluidBoundary())
-bc = FreeCAD.ActiveDocument.CfdFluidBoundary.BoundarySettings
-bc['BoundaryType'] = 'inlet'
-bc['BoundarySubtype'] = 'uniformVelocity'
-bc['ThermalBoundaryType'] = 'fixedValue'
-bc['VelocityIsCartesian'] = True
-bc['Ux'] = 0.0
-bc['Uy'] = 0.0
-bc['Uz'] = -1
-bc['VelocityMag'] = 0.0
-bc['DirectionFace'] = ''
-bc['ReverseNormal'] = True
-bc['MassFlowRate'] = 0.0
-bc['VolFlowRate'] = 0.0
-bc['Pressure'] = 0.0
-bc['SlipRatio'] = 0.0
-bc['Temperature'] = 290.0
-bc['HeatFlux'] = 0.0
-bc['HeatTransferCoeff'] = 0.0
-bc['TurbulenceInletSpecification'] = 'intensityAndLengthScale'
-bc['TurbulentKineticEnergy'] = 0.01
-bc['SpecificDissipationRate'] = 0.994837673637
-bc['TurbulenceIntensity'] = 0.1
-bc['TurbulenceLengthScale'] = 0.1
-bc['PressureDropCoeff'] = 0.0
-bc['ScreenWireDiameter'] = 0.0001
-bc['ScreenSpacing'] = 0.0
-bc['PorousBaffleMethod'] = 0
-FreeCAD.ActiveDocument.CfdFluidBoundary.BoundarySettings = bc
-FreeCAD.ActiveDocument.CfdFluidBoundary.Label = 'inlet'
-FreeCAD.ActiveDocument.CfdFluidBoundary.References = []
-FreeCAD.ActiveDocument.CfdFluidBoundary.References.append(('CYLINDER_1', 'Face2'))
-FreeCAD.ActiveDocument.recompute()
-
-# Values are converted to SI units and stored (eg. m/s)
-init = FreeCAD.ActiveDocument.InitialiseFields.InitialVariables
-init['PotentialFoam'] = True
-init['UseInletUPValues'] = False
-init['Ux'] = 0.0
-init['Uy'] = 0.0
-init['Uz'] = 0.0
-init['Pressure'] = 0.0
-init['alphas'] = {}
-init['UseInletTemperatureValues'] = False
-init['Temperature'] = 290.0
-init['UseInletTurbulenceValues'] = False
-init['omega'] = 0.994837673637
-init['k'] = 0.01
-init['Inlet'] = ''
-FreeCAD.ActiveDocument.InitialiseFields.InitialVariables = init
-
-# Values are converted to SI units and stored (eg. m/s)
-analysis.addObject(CfdFluidBoundary.makeCfdFluidBoundary())  ##remember to add this line whenever you add a new boundary condition
-bc = FreeCAD.ActiveDocument.CfdFluidBoundary001.BoundarySettings
-bc['BoundaryType'] = 'outlet'
-bc['BoundarySubtype'] = 'staticPressure'
-bc['ThermalBoundaryType'] = 'fixedValue'
-bc['VelocityIsCartesian'] = True
-bc['Ux'] = 0.0
-bc['Uy'] = 0.0
-bc['Uz'] = 0.0
-bc['VelocityMag'] = 0.0
-bc['DirectionFace'] = ''
-bc['ReverseNormal'] = False
-bc['MassFlowRate'] = 0.0
-bc['VolFlowRate'] = 0.0
-bc['Pressure'] = 0.0
-bc['SlipRatio'] = 0.0
-bc['Temperature'] = 290.0
-bc['HeatFlux'] = 0.0
-bc['HeatTransferCoeff'] = 0.0
-bc['TurbulenceInletSpecification'] = 'intensityAndLengthScale'
-bc['TurbulentKineticEnergy'] = 0.01
-bc['SpecificDissipationRate'] = 0.994837673637
-bc['TurbulenceIntensity'] = 0.1
-bc['TurbulenceLengthScale'] = 0.1
-bc['PressureDropCoeff'] = 0.0
-bc['ScreenWireDiameter'] = 0.0001
-bc['ScreenSpacing'] = 0.0
-bc['PorousBaffleMethod'] = 0
-FreeCAD.ActiveDocument.CfdFluidBoundary001.BoundarySettings = bc
-FreeCAD.ActiveDocument.CfdFluidBoundary001.Label = 'outlet'
-FreeCAD.ActiveDocument.CfdFluidBoundary001.References = []
-FreeCAD.ActiveDocument.CfdFluidBoundary001.References.append(('CYLINDER_1', 'Face3'))
-FreeCAD.ActiveDocument.recompute()
-
-# Values are converted to SI units and stored (eg. m/s)
-analysis.addObject(CfdFluidBoundary.makeCfdFluidBoundary())  ##remember to add this line whenever you add a new boundary condition
-bc = FreeCAD.ActiveDocument.CfdFluidBoundary002.BoundarySettings
-bc['BoundaryType'] = 'wall'
-bc['BoundarySubtype'] = 'fixed'
-bc['ThermalBoundaryType'] = 'fixedValue'
-bc['VelocityIsCartesian'] = True
-bc['Ux'] = 0.0
-bc['Uy'] = 0.0
-bc['Uz'] = 0.0
-bc['VelocityMag'] = 0.0
-bc['DirectionFace'] = ''
-bc['ReverseNormal'] = False
-bc['MassFlowRate'] = 0.0
-bc['VolFlowRate'] = 0.0
-bc['Pressure'] = 0.0
-bc['SlipRatio'] = 0.0
-bc['Temperature'] = 290.0
-bc['HeatFlux'] = 0.0
-bc['HeatTransferCoeff'] = 0.0
-bc['TurbulenceInletSpecification'] = 'intensityAndLengthScale'
-bc['TurbulentKineticEnergy'] = 0.01
-bc['SpecificDissipationRate'] = 0.994837673637
-bc['TurbulenceIntensity'] = 0.1
-bc['TurbulenceLengthScale'] = 0.1
-bc['PressureDropCoeff'] = 0.0
-bc['ScreenWireDiameter'] = 0.0001
-bc['ScreenSpacing'] = 0.0
-bc['PorousBaffleMethod'] = 0
-FreeCAD.ActiveDocument.CfdFluidBoundary002.BoundarySettings = bc
-FreeCAD.ActiveDocument.CfdFluidBoundary002.Label = 'wall'
-FreeCAD.ActiveDocument.CfdFluidBoundary002.References = []
-FreeCAD.ActiveDocument.CfdFluidBoundary002.References.append(('CYLINDER_1', 'Face1'))
-FreeCAD.ActiveDocument.recompute()
-
-
-
-##start the mesh
-Cylinder_Mesh=CfdMesh.makeCfdMesh('Cylinder_Mesh')
-FreeCAD.ActiveDocument.ActiveObject.Part = FreeCAD.ActiveDocument.CYLINDER_1
-analysis.addObject(FreeCAD.ActiveDocument.ActiveObject)
-
-
-
-'''
-FreeCAD.ActiveDocument.Cylinder_Mesh.CharacteristicLengthMax = '0 mm'
-FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = "snappyHexMesh"
-FreeCAD.ActiveDocument.Cylinder_Mesh.ElementDimension = '3D'
-FreeCAD.ActiveDocument.Cylinder_Mesh.CellsBetweenLevels = 3
-FreeCAD.ActiveDocument.Cylinder_Mesh.EdgeRefinement = 0
-FreeCAD.ActiveDocument.Cylinder_Mesh.PointInMesh = {'y': 0.0, 'x': 0.0, 'z': 0.0}
-'''
-
-
-cart_mesh=CfdMeshTools.CfdMeshTools(Cylinder_Mesh)
-cart_mesh.get_tmp_file_paths()
-cart_mesh.setup_mesh_case_dir()
-cart_mesh.get_region_data()
-cart_mesh.write_mesh_case() ##remember to include /data file in the positon where you need to use defaultmesh
-cart_mesh.write_part_file()
-
-tmpdir = tempfile.gettempdir()
-meshCaseDir = os.path.join(tmpdir,'meshCase')
-cmd = CfdTools.makeRunCommand('./Allmesh', meshCaseDir, source_env=False)
-os.system(cmd[2])
-
-
-
-
-
-
-
-
-
-
-
-
-
-## setup solution 
-wd=CfdTools.getTempWorkingDir()
-
-import CfdCaseWriterFoam
-solver_obj = CfdTools.getSolver(analysis)
-case_folder = os.path.join(solver_obj.WorkingDir, solver_obj.InputCaseName)
-cwd = os.curdir
-# Perform initialisation here rather than __init__ in case of path changes
-case_folder = os.path.expanduser(os.path.abspath(case_folder))
-mesh_file_name = os.path.join(case_folder, solver_obj.InputCaseName, u".unv")
-template_path = os.path.join(CfdTools.get_module_path(), "data", "defaults")
-solverSettingsDict = CfdTools.getSolverSettings(solver_obj)
-initial_conditions = CfdTools.getInitialConditions(analysis)
-bc_group = CfdTools.getCfdBoundaryGroup(analysis)
-
-def bafflesPresent():
-    for b in bc_group:
-        if b.BoundarySettings['BoundaryType'] == 'baffle':
-            return True
-    return False
-
-initialisationZone_objs = CfdTools.getInitialisationZoneObjects(analysis)
-zone_objs = CfdTools.getZoneObjects(analysis)
-mesh_obj = CfdTools.getMesh(analysis)
-material_objs = CfdTools.getMaterials(analysis)
-porousZone_objs = CfdTools.getPorousZoneObjects(analysis)
-
-def porousBafflesPresent():
-    for b in bc_group:
-        if b.BoundarySettings['BoundaryType'] == 'baffle' and \
-            b.BoundarySettings['BoundarySubtype'] == 'porousBaffle':
-            return True
-    return False
-
-phys_settings = dict(zip(physics_model.PropertiesList,
-                                 (getattr(physics_model, prop) for prop in physics_model.PropertiesList)))
-settings = {
+        # Collect settings into single dictionary
+        if not self.mesh_obj:
+            raise RuntimeError("No mesh object found in analysis")
+        phys_settings = dict(zip(self.physics_model.PropertiesList,
+                                 (getattr(self.physics_model, prop) for prop in self.physics_model.PropertiesList)))
+        self.settings = {
             'physics': phys_settings,
             'fluidProperties': [],  # Order is important, so use a list
-            'initialValues': init,
-            'boundaries': dict((b.Label, b.BoundarySettings) for b in bc_group),
-            'bafflesPresent': bafflesPresent(),
+            'initialValues': self.initial_conditions,
+            'boundaries': dict((b.Label, b.BoundarySettings) for b in self.bc_group),
+            'bafflesPresent': self.bafflesPresent(),
             'porousZones': {},
             'porousZonesPresent': False,
-            'initialisationZones': {o.Label: o.initialisationZoneProperties for o in initialisationZone_objs},
-            'initialisationZonesPresent': len(initialisationZone_objs) > 0,
-            'zones': {o.Label: {'PartNameList': tuple(o.partNameList)} for o in zone_objs},
-            'zonesPresent': len(zone_objs) > 0,
-            'meshType': mesh_obj.Proxy.Type,
+            'initialisationZones': {o.Label: o.initialisationZoneProperties for o in self.initialisationZone_objs},
+            'initialisationZonesPresent': len(self.initialisationZone_objs) > 0,
+            'zones': {o.Label: {'PartNameList': tuple(o.partNameList)} for o in self.zone_objs},
+            'zonesPresent': len(self.zone_objs) > 0,
+            'meshType': self.mesh_obj.Proxy.Type,
             'solver': solverSettingsDict,
             'system': {},
             'runChangeDictionary':False
             }
 
-def processSystemSettings():
-    system_settings = settings['system']
-    system_settings['FoamRuntime'] = CfdTools.getFoamRuntime()
-    system_settings['CasePath'] = case_folder
-    system_settings['TranslatedCasePath'] = CfdTools.translatePath(case_folder)
-    system_settings['FoamPath'] = CfdTools.getFoamDir()
-    system_settings['TranslatedFoamPath'] = CfdTools.translatePath(CfdTools.getFoamDir())
-processSystemSettings()
+        self.processSystemSettings()
+        self.processSolverSettings()
+        self.processFluidProperties()
+        self.processBoundaryConditions()
+        self.processInitialConditions()
+        self.clearCase()
 
-def getSolverName():
+        self.exportZoneStlSurfaces()
+        if self.porousZone_objs:
+            self.processPorousZoneProperties()
+        self.processInitialisationZoneProperties()
+
+        self.settings['createPatchesFromSnappyBaffles'] = False
+        cfdMessage("Matching boundary conditions ...\n")
+        self.setupPatchNames()
+
+        TemplateBuilder.TemplateBuilder(self.case_folder, self.template_path, self.settings)
+        self.writeMesh()
+
+        # Update Allrun permission - will fail silently on Windows
+        fname = os.path.join(self.case_folder, "Allrun")
+        import stat
+        s = os.stat(fname)
+        os.chmod(fname, s.st_mode | stat.S_IEXEC)
+
+        # Move mesh files, after being edited, to polyMesh.org
+        CfdTools.movePolyMesh(self.case_folder)
+
+        cfdMessage("Successfully wrote {} case to folder {}\n".format(
+                   self.solver_obj.SolverName, self.solver_obj.WorkingDir))
+        return True
+
+    def getSolverName(self):
         """ Solver name is selected based on selected physics. This should only be extended as additional physics are
         included. """
         solver = None
-        if physics_model.Phase == 'Single':
-            if len(material_objs) == 1:
-                if physics_model.Flow == 'Incompressible':
-                    if physics_model.Thermal == 'None':
-                        if physics_model.Time == 'Transient':
+        if self.physics_model.Phase == 'Single':
+            if len(self.material_objs) == 1:
+                if self.physics_model.Flow == 'Incompressible':
+                    if self.physics_model.Thermal == 'None':
+                        if self.physics_model.Time == 'Transient':
                             solver = 'pimpleFoam'
                         else:
-                            if porousZone_objs or porousBafflesPresent():
+                            if self.porousZone_objs or self.porousBafflesPresent():
                                 solver = 'porousSimpleFoam'
                             else:
                                 solver = 'simpleFoam'
                     else:
                         raise RuntimeError("Only isothermal simulation currently supported for incompressible flow.")
-                elif physics_model.Flow == 'HighMachCompressible':
+                elif self.physics_model.Flow == 'HighMachCompressible':
                     solver = 'hisa'
                 else:
-                    raise RuntimeError(physics_model.Flow + " flow model currently not supported.")
+                    raise RuntimeError(self.physics_model.Flow + " flow model currently not supported.")
             else:
                 raise RuntimeError("Only one material object may be present for single phase simulation.")
-        elif physics_model.Phase == 'FreeSurface':
-            if physics_model.Time == 'Transient':
-                if physics_model.Thermal == 'None':
-                    if len(material_objs) == 2:
+        elif self.physics_model.Phase == 'FreeSurface':
+            if self.physics_model.Time == 'Transient':
+                if self.physics_model.Thermal == 'None':
+                    if len(self.material_objs) == 2:
                         solver = 'interFoam'
-                    elif len(material_objs) > 2:
+                    elif len(self.material_objs) > 2:
                         solver = 'multiphaseInterFoam'
                     else:
                         raise RuntimeError("At least two material objects must be present for free surface simulation.")
@@ -362,35 +157,110 @@ def getSolverName():
             else:
                 raise RuntimeError("Only transient analysis is supported for free surface flow simulation.")
         else:
-            raise RuntimeError(physics_model.Phase + " phase model currently not supported.")
+            raise RuntimeError(self.physics_model.Phase + " phase model currently not supported.")
 
         # Catch-all in case
         if solver is None:
             raise RuntimeError("No solver is supported to handle the selected physics with {} phases.".format(
-                len(material_objs)))
+                len(self.material_objs)))
         return solver
 
+    def processSolverSettings(self):
+        solver_settings = self.settings['solver']
+        if solver_settings['parallel']:
+            if solver_settings['parallelCores'] < 2:
+                solver_settings['parallelCores'] = 2
+        solver_settings['solverName'] = self.getSolverName()
 
-def processSolverSettings():
-    solver_settings = settings['solver']
-    if solver_settings['parallel']:
-        if solver_settings['parallelCores'] < 2:
-            solver_settings['parallelCores'] = 2
-    solver_settings['solverName'] = getSolverName()
+    def processSystemSettings(self):
+        system_settings = self.settings['system']
+        system_settings['FoamRuntime'] = CfdTools.getFoamRuntime()
+        system_settings['CasePath'] = self.case_folder
+        system_settings['TranslatedCasePath'] = CfdTools.translatePath(self.case_folder)
+        system_settings['FoamPath'] = CfdTools.getFoamDir()
+        system_settings['TranslatedFoamPath'] = CfdTools.translatePath(CfdTools.getFoamDir())
 
-processSolverSettings()
+    def clearCase(self, backup_path=None):
+        """ Remove and recreate case directory, optionally backing up """
+        output_path = self.case_folder
+        if backup_path and os.path.isdir(output_path):
+            shutil.move(output_path, backup_path)
+        if os.path.isdir(output_path):
+            shutil.rmtree(output_path)
+        os.makedirs(output_path)  # mkdir -p
 
-def processFluidProperties():
+    # Mesh
+
+    def writeMesh(self):
+        """ Convert or copy mesh files """
+        if self.mesh_obj.Proxy.Type == "CfdMesh":
+            import CfdMeshTools
+            # Move Cartesian mesh files from temporary mesh directory to case directory
+            self.cart_mesh = CfdMeshTools.CfdMeshTools(self.mesh_obj)
+            cart_mesh = self.cart_mesh
+            if self.mesh_obj.MeshUtility == "cfMesh":
+                print("Writing Cartesian mesh\n")
+                # cart_mesh.get_tmp_file_paths("cfMesh")  # Update tmp file locations
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(self.case_folder, 'constant', 'polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(self.case_folder, 'constant', 'triSurface'))
+                # shutil.copy2(cart_mesh.temp_file_meshDict, os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'meshDict'),
+                             os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'Allmesh'),self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'log.cartesianMesh'),self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir,'log.surfaceFeatureEdges'),self.case_folder)
+
+            elif self.mesh_obj.MeshUtility == "snappyHexMesh":
+                print("Writing snappyHexMesh generated Cartesian mesh\n")
+                # cart_mesh.get_tmp_file_paths("snappyHexMesh")  # Update tmp file locations
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(self.case_folder,'constant','polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(self.case_folder,'constant','triSurface'))
+                # shutil.copy2(cart_mesh.temp_file_blockMeshDict, os.path.join(self.case_folder,'system'))
+                # shutil.copy2(cart_mesh.temp_file_snappyMeshDict, os.path.join(self.case_folder,'system'))
+                # shutil.copy2(cart_mesh.temp_file_surfaceFeatureExtractDict, os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'blockMeshDict'),
+                             os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'snappyHexMeshDict'),
+                             os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'system', 'surfaceFeatureExtractDict'),
+                             os.path.join(self.case_folder,'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'Allmesh'), self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.blockMesh'), self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.surfaceFeatureExtract'), self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.snappyHexMesh'), self.case_folder)
+
+            elif self.mesh_obj.MeshUtility == "gmsh":
+                print("Writing gmsh generated mesh\n")
+                cart_mesh.get_tmp_file_paths()  # Update tmp file locations
+                CfdTools.copyFilesRec(cart_mesh.polyMeshDir, os.path.join(self.case_folder,'constant','polyMesh'))
+                CfdTools.copyFilesRec(cart_mesh.triSurfaceDir, os.path.join(self.case_folder,'constant','gmsh'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'Allmesh'), self.case_folder)
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.gmshToFoam'), self.case_folder)
+
+            if self.mesh_obj.ElementDimension == '2D':
+                shutil.copy2(os.path.join(os.path.join(cart_mesh.meshCaseDir,'system'),'extrudeMeshDict'), 
+                             os.path.join(self.case_folder, 'system'))
+                shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.extrudeMesh'), self.case_folder)
+        else:
+            raise RuntimeError("Unrecognised mesh type")
+
+    def setupMesh(self, updated_mesh_path, scale):
+        if os.path.exists(updated_mesh_path):
+            CfdTools.convertMesh(self.case_folder, updated_mesh_path, scale)
+
+    def processFluidProperties(self):
         # self.material_obj currently stores everything as a string
         # Convert to (mostly) SI numbers for OpenFOAM
-        
-        for material_obj in material_objs:
+        settings = self.settings
+        for material_obj in self.material_objs:
             mp = {}
             mp['Name'] = material_obj.Label
             if 'Density' in material_obj.PropertiesList:
                 mp['Density'] = Units.Quantity(material_obj.Density).getValueAs("kg/m^3").Value
             if 'DynamicViscosity' in material_obj.PropertiesList:
-                if physics_model.Turbulence == 'Inviscid':
+                if self.physics_model.Turbulence == 'Inviscid':
                     mp['DynamicViscosity'] = 0.0
                 else:
                     mp['DynamicViscosity'] = Units.Quantity(material_obj.DynamicViscosity).getValueAs("kg/m/s").Value
@@ -408,11 +278,9 @@ def processFluidProperties():
                 mp['SutherlandTemperature'] = Units.Quantity(material_obj.SutherlandTemperature).getValueAs("K").Value
             settings['fluidProperties'].append(mp)
 
-
-processFluidProperties()
-
-def processBoundaryConditions():
+    def processBoundaryConditions(self):
         """ Compute any quantities required before case build """
+        settings = self.settings
         for bc_name in settings['boundaries']:
             bc = settings['boundaries'][bc_name]
             if not bc['VelocityIsCartesian']:
@@ -420,7 +288,7 @@ def processBoundaryConditions():
                 face = bc['DirectionFace'].split(':')
                 # See if entered face actually exists and is planar
                 try:
-                    selected_object = analysis.Document.getObject(face[0])
+                    selected_object = self.analysis_obj.Document.getObject(face[0])
                     if hasattr(selected_object, "Shape"):
                         elt = selected_object.Shape.getElement(face[1])
                         if elt.ShapeType == 'Face' and CfdTools.is_planar(elt):
@@ -462,11 +330,10 @@ def processBoundaryConditions():
                         alphas_new[alpha_name] = alpha
                         sum_alpha += alpha
                 bc['alphas'] = alphas_new
-processBoundaryConditions()
 
-def processInitialConditions():
+    def processInitialConditions(self):
         """ Do any required computations before case build. Boundary conditions must be processed first. """
-        
+        settings = self.settings
         initial_values = settings['initialValues']
         if settings['solver']['solverName'] in ['simpleFoam', 'porousSimpleFoam', 'pimpleFoam']:
             mat_prop = settings['fluidProperties'][0]
@@ -565,44 +432,33 @@ def processInitialConditions():
                     raise RuntimeError(
                         "Turbulence inlet specification currently unsupported for copying turbulence initial conditions")
 
-processInitialConditions()
+    # Zones
 
-def clearCase(backup_path=None):
-    """ Remove and recreate case directory, optionally backing up """
-    output_path = case_folder
-    if backup_path and os.path.isdir(output_path):
-        shutil.move(output_path, backup_path)
-    if os.path.isdir(output_path):
-        shutil.rmtree(output_path)
-    os.makedirs(output_path)  # mkdir -p
-
-clearCase()
-
-def exportZoneStlSurfaces():
-        for zo in zone_objs:
+    def exportZoneStlSurfaces(self):
+        for zo in self.zone_objs:
+            import Mesh
             for i in range(len(zo.partNameList)):
                 #shape = zo.shapeList[i].Shape
-                path = os.path.join(solver_obj.WorkingDir,
-                                    solver_obj.InputCaseName,
+                path = os.path.join(self.solver_obj.WorkingDir,
+                                    self.solver_obj.InputCaseName,
                                     "constant",
                                     "triSurface")
                 if not os.path.exists(path):
                     os.makedirs(path)
                 fname = os.path.join(path, zo.partNameList[i]+u".stl")
-                sel_obj = analysis.Document.getObject(zo.partNameList[i])
+                import MeshPart
+                sel_obj = self.analysis_obj.Document.getObject(zo.partNameList[i])
                 shape = sel_obj.Shape
                 #meshStl = MeshPart.meshFromShape(shape, LinearDeflection = self.mesh_obj.STLLinearDeflection)
                 meshStl = MeshPart.meshFromShape(shape, LinearDeflection = 0.1)
                 meshStl.write(fname)
                 print("Successfully wrote stl surface\n")
 
-exportZoneStlSurfaces()
-
-def processPorousZoneProperties():
-        
+    def processPorousZoneProperties(self):
+        settings = self.settings
         settings['porousZonesPresent'] = True
         porousZoneSettings = settings['porousZones']
-        for po in porousZone_objs:
+        for po in self.porousZone_objs:
             pd = {'PartNameList': tuple(po.partNameList)}
             if po.porousZoneProperties['PorousCorrelation'] == 'DarcyForchheimer':
                 pd['D'] = tuple(po.porousZoneProperties['D'])
@@ -619,7 +475,7 @@ def processPorousZoneProperties():
                 d0 = po.porousZoneProperties['OuterDiameter']
                 u0 = po.porousZoneProperties['VelocityEstimate']
                 aspectRatio = po.porousZoneProperties['AspectRatio']
-                kinVisc = settings['fluidProperties'][0]['KinematicViscosity']
+                kinVisc = self.settings['fluidProperties']['KinematicViscosity']
                 if kinVisc == 0.0:
                     raise ValueError("Viscosity must be set for Jakob correlation")
                 if spacing < d0:
@@ -639,8 +495,8 @@ def processPorousZoneProperties():
                 raise RuntimeError("Unrecognised method for porous baffle resistance")
             porousZoneSettings[po.Label] = pd
 
-def processInitialisationZoneProperties():
-        
+    def processInitialisationZoneProperties(self):
+        settings = self.settings
         if settings['solver']['solverName'] in ['interFoam', 'multiphaseInterFoam']:
             # Make sure the first n-1 alpha values exist, and write the n-th one
             # consistently for multiphaseInterFoam
@@ -660,46 +516,28 @@ def processInitialisationZoneProperties():
                             sum_alpha += alpha
                     z['alphas'] = alphas_new
 
+    def bafflesPresent(self):
+        for b in self.bc_group:
+            if b.BoundarySettings['BoundaryType'] == 'baffle':
+                return True
+        return False
 
-if porousZone_objs:
-   processPorousZoneProperties()
-processInitialisationZoneProperties()
+    def porousBafflesPresent(self):
+        for b in self.bc_group:
+            if b.BoundarySettings['BoundaryType'] == 'baffle' and \
+               b.BoundarySettings['BoundarySubtype'] == 'porousBaffle':
+                return True
+        return False
 
-TemplateBuilder.TemplateBuilder(case_folder, template_path, settings)
-
-def matchFacesToTargetShape(ref_lists, shape):
-    """ This function does a geometric matching of groups of faces much faster than doing face-by-face search
-    :param ref_lists: List of lists of references - outer list is 'group' (e.g. boundary); refs are tuples
-    :param shape: The shape to map to
-    :return:  A list of tuples: (group index, reference) of matching refs for each face in shape
-    """
-    # Preserve original indices
-    mesh_face_list = zip(shape.Faces, range(len(shape.Faces)))
-    src_face_list = []
-    for i, rl in enumerate(ref_lists):
-        for br in rl:
-            obj = FreeCAD.ActiveDocument.getObject(br[0])
-            if not obj:
-                raise RuntimeError("Referenced object '{}' not found - object may "
-                                   "have been deleted".format(br[0]))
-            try:
-                bf = obj.Shape.getElement(br[1])
-            except Part.OCCError:
-                raise RuntimeError("Referenced face '{}:{}' not found - face may "
-                                   "have been deleted".format(br[0], br[1]))
-            src_face_list.append((bf, i, br))
-
-
-
-def setupPatchNames():
+    def setupPatchNames(self):
         print ('Populating createPatchDict to update BC names')
         import CfdMeshTools
         # Init in case not meshed yet
-        CfdMeshTools.CfdMeshTools(mesh_obj)
-        
+        CfdMeshTools.CfdMeshTools(self.mesh_obj)
+        settings = self.settings
         settings['createPatches'] = {}
-        
-        mobj = mesh_obj
+        bc_group = self.bc_group
+        mobj = self.mesh_obj
 
         # Make list of list of all boundary references for their corresponding boundary
         boundary_ref_lists = []
@@ -707,7 +545,7 @@ def setupPatchNames():
             boundary_ref_lists.append(bc_obj.References)
 
         # Match them up with faces in the meshed part
-        matched_faces = matchFacesToTargetShape(boundary_ref_lists, mobj.Part.Shape)
+        matched_faces = CfdTools.matchFacesToTargetShape(boundary_ref_lists, mobj.Part.Shape)
 
         bc_lists = []
         for bc in bc_group:
@@ -718,7 +556,11 @@ def setupPatchNames():
                 bc_lists[nb].append(mobj.ShapeFaceNames[i])
                 for k in range(len(matched_faces[i])-1):
                     nb2, bref2 = matched_faces[i][k+1]
-                    
+                    if nb2 != nb:
+                        cfdMessage(
+                            "Boundary '{}' reference {}:{} also assigned as "
+                            "boundary '{}' reference {}:{}\n".format(
+                                bc_group[nb].Label, bref[0], bref[1], bc_group[nb2].Label, bref2[0], bref2[1]))
 
         for bc_id, bc_obj in enumerate(bc_group):
             bcDict = bc_obj.BoundarySettings
@@ -730,8 +572,8 @@ def setupPatchNames():
                 'PatchType': patchType
             }
 
-        if mesh_obj.MeshRegionList:
-            for regionObj in mesh_obj.MeshRegionList:
+        if self.mesh_obj.MeshRegionList:
+            for regionObj in self.mesh_obj.MeshRegionList:
                 if regionObj.Baffle:
                     settings['createPatchesFromSnappyBaffles'] = True
 
@@ -750,8 +592,8 @@ def setupPatchNames():
                 if bcType == "baffle":
                     tempBaffleList = []
                     tempBaffleListSlave = []
-                    if mesh_obj.MeshRegionList:  # Can this if statement not be lumped with previous?
-                        for regionObj in mesh_obj.MeshRegionList:
+                    if self.mesh_obj.MeshRegionList:  # Can this if statement not be lumped with previous?
+                        for regionObj in self.mesh_obj.MeshRegionList:
                             # print regionObj.Name
                             if regionObj.Baffle:
                                 for sub in regionObj.References:
@@ -780,6 +622,3 @@ def setupPatchNames():
                 'PatchNamesList': tuple(def_bc_list),
                 'PatchType': "patch"
             }
-
-setupPatchNames()
-settings['createPatchesFromSnappyBaffles'] = False
