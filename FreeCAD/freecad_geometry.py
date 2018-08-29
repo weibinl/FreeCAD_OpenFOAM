@@ -32,7 +32,8 @@ FREECAD_DOC_EXTENSION='.fcstd'
 FreeCAD.newDocument(FREECAD_DOC_NAME)
 FreeCAD.ActiveDocument=FreeCAD.getDocument(FREECAD_DOC_NAME)
 CYLINDER_1=FreeCAD.ActiveDocument.addObject('Part::Cylinder','CYLINDER_1')
-CYLINDER_1.Radius=5
+CYLINDER_1.Radius=2
+CYLINDER_1.Height=20
 
 #Gui.activateWorkbench("CfdOFWorkbench")
 
@@ -57,7 +58,6 @@ physics_model.Thermal = 'None'
 physics_model.addProperty("App::PropertyEnumeration", "Phase", "Physics modelling","Type of phases present")
 physics_model.Phase = ['Single', 'FreeSurface']
 physics_model.Phase = 'Single'
-
 
 physics_model.addProperty("App::PropertyEnumeration", "Turbulence", "Physics modelling","Type of turbulence modelling")
 physics_model.Turbulence = ['Inviscid', 'Laminar', 'RANS']
@@ -225,17 +225,12 @@ FreeCAD.ActiveDocument.recompute()
 Cylinder_Mesh=CfdMesh.makeCfdMesh('Cylinder_Mesh')
 FreeCAD.ActiveDocument.ActiveObject.Part = FreeCAD.ActiveDocument.CYLINDER_1
 analysis.addObject(FreeCAD.ActiveDocument.ActiveObject)
-
-
-
-'''
+FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = "cfMesh"
 FreeCAD.ActiveDocument.Cylinder_Mesh.CharacteristicLengthMax = '0 mm'
-FreeCAD.ActiveDocument.Cylinder_Mesh.MeshUtility = "snappyHexMesh"
 FreeCAD.ActiveDocument.Cylinder_Mesh.ElementDimension = '3D'
 FreeCAD.ActiveDocument.Cylinder_Mesh.CellsBetweenLevels = 3
 FreeCAD.ActiveDocument.Cylinder_Mesh.EdgeRefinement = 0
 FreeCAD.ActiveDocument.Cylinder_Mesh.PointInMesh = {'y': 0.0, 'x': 0.0, 'z': 0.0}
-'''
 
 
 cart_mesh=CfdMeshTools.CfdMeshTools(Cylinder_Mesh)
@@ -285,8 +280,7 @@ def porousBafflesPresent():
             return True
     return False
 
-phys_settings = dict(zip(physics_model.PropertiesList,
-                                 (getattr(physics_model, prop) for prop in physics_model.PropertiesList)))
+phys_settings = dict(zip(physics_model.PropertiesList,(getattr(physics_model, prop) for prop in physics_model.PropertiesList)))
 settings = {
             'physics': phys_settings,
             'fluidProperties': [],  # Order is important, so use a list
@@ -360,7 +354,6 @@ def getSolverName():
                 len(material_objs)))
         return solver
 
-
 def processSolverSettings():
     solver_settings = settings['solver']
     if solver_settings['parallel']:
@@ -397,7 +390,6 @@ def processFluidProperties():
             if 'SutherlandTemperature' in material_obj.PropertiesList:
                 mp['SutherlandTemperature'] = Units.Quantity(material_obj.SutherlandTemperature).getValueAs("K").Value
             settings['fluidProperties'].append(mp)
-
 
 processFluidProperties()
 
@@ -452,6 +444,7 @@ def processBoundaryConditions():
                         alphas_new[alpha_name] = alpha
                         sum_alpha += alpha
                 bc['alphas'] = alphas_new
+
 processBoundaryConditions()
 
 def processInitialConditions():
@@ -650,7 +643,6 @@ def processInitialisationZoneProperties():
                             sum_alpha += alpha
                     z['alphas'] = alphas_new
 
-
 if porousZone_objs:
    processPorousZoneProperties()
 processInitialisationZoneProperties()
@@ -778,8 +770,6 @@ def matchFacesToTargetShape(ref_lists, shape):
                 successful_candidates[orig_idx].append((nb, bref))
 
     return successful_candidates
-
-
 
 def setupPatchNames():
         print ('Populating createPatchDict to update BC names')
@@ -928,17 +918,14 @@ def writeMesh():
                 shutil.copy2(os.path.join(cart_mesh.meshCaseDir, 'log.extrudeMesh'), case_folder)
         else:
             raise RuntimeError("Unrecognised mesh type")
-
-
 writeMesh()
 fname = os.path.join(case_folder, "Allrun")
 import stat
 s = os.stat(fname)
 os.chmod(fname, s.st_mode | stat.S_IEXEC)
-
-# Move mesh files, after being edited, to polyMesh.org
 CfdTools.movePolyMesh(case_folder)
-print(case_folder)
+#move the case to desired location
 os.system("cd /tmp")
 os.system("cp -r /tmp/case/ /home/weibin/freecad_create_openfoam/")
+#start the simulation
 os.system("cd /home/weibin/freecad_create_openfoam/case && bash Allrun")
