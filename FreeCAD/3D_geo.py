@@ -1,4 +1,5 @@
 import os
+import time
 FREECADPATH='/usr/lib/freecad/lib'
 import sys
 sys.path.append(FREECADPATH)
@@ -31,18 +32,18 @@ FREECAD_DOC_EXTENSION='.fcstd'
 
 WORKING_DOC=FreeCAD.newDocument(FREECAD_DOC_NAME)
 FreeCAD.ActiveDocument=FreeCAD.getDocument(FREECAD_DOC_NAME)
-PostDiameter=10
-LateralGap=10
-DownstreamGap=10
-TiltRatio=6 #lateral displacement vs lateral movement per bump, or # of rows required to displace one post in column
-ColumnNumber=4 #one side, we built the symmetric model about the center bypass channel to reduce the required calculation time, also this is the number of channel, the post number should be ColumnNumber-1, count from the top
-RowNumber=TiltRatio
-MinimumBypassChannelWidth=25
-LateralDisplacementPerRow=(DownstreamGap+PostDiameter)/TiltRatio
-DepthofChannel=10
-MinimumBypassChannelWidth=25
+PostDiameter=21.0
+LateralGap=17.0
+DownstreamGap=17.0
+TiltRatio=42.0 #lateral displacement vs lateral movement per bump, or # of rows required to displace one post in column
+ColumnNumber=5 #one side, we built the symmetric model about the center bypass channel to reduce the required calculation time, also this is the number of channel, the post number should be ColumnNumber-1, count from the top
+RowNumber=int(TiltRatio)
+MinimumBypassChannelWidth=25.0
+LateralDisplacementPerRow=(DownstreamGap+PostDiameter)/float(TiltRatio)
+DepthofChannel=10.0
+MinimumBypassChannelWidth=25.0
 XPosFirstPost=MinimumBypassChannelWidth/2+PostDiameter/2 #define the first post of the array
-YPosFirstPost=PostDiameter/2
+YPosFirstPost=PostDiameter/2.0
 geom_counter=0
 
 # generate simulation area
@@ -62,7 +63,7 @@ Sim_area.Reversed = False
 Sim_area.Symmetric = False
 Sim_area.TaperAngle = 0.000000000000000
 Sim_area.TaperAngleRev = 0.000000000000000
-FreeCAD.ActiveDocument.recompute()
+
 
 # main array
 Main_Array={}
@@ -72,11 +73,11 @@ ypos=YPosFirstPost
 points=[FreeCAD.Vector(xpos,ypos,0.0),FreeCAD.Vector(xpos+PostDiameter/2,ypos+PostDiameter/2,0.0),FreeCAD.Vector(xpos,ypos+PostDiameter,0.0),FreeCAD.Vector(xpos-PostDiameter/2,ypos+PostDiameter/2,0.0)]
 line = Draft.makeWire(points,closed=True,face=False,support=None)
 Draft.autogroup(line)
-FreeCAD.ActiveDocument.recompute()
+
 
 Array=Draft.makeArray(FreeCAD.ActiveDocument.DWire001,FreeCAD.Vector(1,0,0),FreeCAD.Vector(0,1,0),2,2)
 Draft.autogroup(Array)
-FreeCAD.ActiveDocument.recompute()
+
 FreeCAD.getDocument(FREECAD_DOC_NAME).getObject("Array").IntervalX = (LateralGap+PostDiameter, 0, 0)
 FreeCAD.getDocument(FREECAD_DOC_NAME).getObject("Array").IntervalY = (LateralDisplacementPerRow, DownstreamGap+PostDiameter, 0)
 FreeCAD.getDocument(FREECAD_DOC_NAME).getObject("Array").NumberX = ColumnNumber
@@ -93,7 +94,7 @@ Main_Array[geom_counter+1].Reversed = False
 Main_Array[geom_counter+1].Symmetric = False
 Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
 Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
-FreeCAD.ActiveDocument.recompute()
+
 geom_counter=geom_counter+1
       
 for CN in range(1,ColumnNumber+1,1):
@@ -114,7 +115,7 @@ for CN in range(1,ColumnNumber+1,1):
     Main_Array[geom_counter+1].Symmetric = False
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
-    FreeCAD.ActiveDocument.recompute()
+    
     geom_counter=geom_counter+1
 
 #bypass channel
@@ -142,7 +143,7 @@ for i in range(2,RowNumber+1,1): #diamond
    Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
    Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
    geom_counter=geom_counter+1
-   FreeCAD.ActiveDocument.recompute()
+   
 
 for i in range(2,RowNumber+1,1): #rectangle
     xpos=ByPassWidth[i]+PostDiameter/2.0
@@ -165,7 +166,7 @@ for i in range(2,RowNumber+1,1): #rectangle
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
     geom_counter=geom_counter+1
-    FreeCAD.ActiveDocument.recompute()
+    
 
 xpos=ByPassWidth[1]+PostDiameter/2
 ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)
@@ -188,7 +189,7 @@ Main_Array[geom_counter+1].Symmetric = False
 Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
 Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
 geom_counter=geom_counter+1
-FreeCAD.ActiveDocument.recompute()
+
 
 xpos=ByPassWidth[1]+PostDiameter/2
 ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)
@@ -211,19 +212,20 @@ Main_Array[geom_counter+1].Symmetric = False
 Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
 Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
 geom_counter=geom_counter+1
-FreeCAD.ActiveDocument.recompute()
 
 
+#negative 
 
 WallPostPosition={}
 WallChannelWidth={}
 for i in range(1,RowNumber+1,1):
-   WallChannelWidth[i]=-0.0061*i**2+0.6*i
+   WallChannelWidth[i]=-0.0061*i**2.0+0.6*i
 
 WallChannelWidthByOrder={}
+
 for i in range(1,RowNumber/2,1): 
-    xpos=WallChannelWidth[RowNumber/2-i]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)+LateralDisplacementPerRow*i
-    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(i-1)
+    xpos=WallChannelWidth[RowNumber/2-i]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)+LateralDisplacementPerRow*float(i)
+    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*float(i-1)
     width=PostDiameter
     heigh=PostDiameter
     BypassWidthByOrder[RowNumber]=ByPassWidth[1]
@@ -243,12 +245,11 @@ for i in range(1,RowNumber/2,1):
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
     geom_counter=geom_counter+1
-    FreeCAD.ActiveDocument.recompute()
 
 
 for i in range(1,RowNumber/2,1): 
-    xpos=WallChannelWidth[RowNumber/2-i]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)+LateralDisplacementPerRow*i
-    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(i-1)-PostDiameter/2-DownstreamGap
+    xpos=WallChannelWidth[RowNumber/2-i]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)+LateralDisplacementPerRow*float(i)
+    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*float(i-1)-PostDiameter/2-DownstreamGap
     width=50
     heigh=PostDiameter*1.5+DownstreamGap*2
     BypassWidthByOrder[RowNumber]=ByPassWidth[1]
@@ -268,8 +269,9 @@ for i in range(1,RowNumber/2,1):
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
     geom_counter=geom_counter+1
-    FreeCAD.ActiveDocument.recompute()
+   
 
+#upper section, diamond
 for i in range (1,RowNumber/2+1,1):
     xpos=WallChannelWidth[RowNumber-i+1]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-2)+LateralDisplacementPerRow*(i+RowNumber/2-1)
     ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber/2-2+i)
@@ -292,11 +294,11 @@ for i in range (1,RowNumber/2+1,1):
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
     geom_counter=geom_counter+1
-    FreeCAD.ActiveDocument.recompute()
-
+   
+#upper section, rectangle
 for i in range(1,RowNumber/2+1,1):
     xpos=WallChannelWidth[RowNumber-i+1]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-2)+LateralDisplacementPerRow*(i+RowNumber/2-1)
-    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber/2-2+i)-PostDiameter/2
+    ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber/2-2+i)
     width=50
     heigh=PostDiameter*1.5+DownstreamGap
     points=[FreeCAD.Vector(xpos,ypos,0.0),FreeCAD.Vector(xpos+width,ypos,0.0),FreeCAD.Vector(xpos+width,ypos+heigh,0.0),FreeCAD.Vector(xpos,ypos+heigh,0.0)]
@@ -316,8 +318,7 @@ for i in range(1,RowNumber/2+1,1):
     Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
     Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
     geom_counter=geom_counter+1
-    FreeCAD.ActiveDocument.recompute()
-
+ 
 xpos=WallChannelWidth[RowNumber/2]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)
 ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)
 width=PostDiameter
@@ -339,10 +340,10 @@ Main_Array[geom_counter+1].Symmetric = False
 Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
 Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
 geom_counter=geom_counter+1
-FreeCAD.ActiveDocument.recompute()
+
 
 xpos=WallChannelWidth[RowNumber/2]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)
-ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)-PostDiameter/2
+ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)
 width=50
 heigh=PostDiameter*1.5+DownstreamGap
 points=[FreeCAD.Vector(xpos,ypos,0.0),FreeCAD.Vector(xpos+width,ypos,0.0),FreeCAD.Vector(xpos+width,ypos+heigh,0.0),FreeCAD.Vector(xpos,ypos+heigh,0.0)]
@@ -360,17 +361,21 @@ Main_Array[geom_counter+1].Symmetric = False
 Main_Array[geom_counter+1].TaperAngle = 0.000000000000000
 Main_Array[geom_counter+1].TaperAngleRev = 0.000000000000000
 geom_counter=geom_counter+1
+
+
+b=[]
+for i in range (1,len(Main_Array)+1,1):
+    b.append(Main_Array[i])
+
+Fusion=FreeCAD.activeDocument().addObject("Part::MultiFuse","Fusion")
+Fusion.Shapes =b
+
+
+Cut=FreeCAD.activeDocument().addObject("Part::Cut","Cut")
+Cut.Base = Sim_area
+Cut.Tool = Fusion
 FreeCAD.ActiveDocument.recompute()
-'''
-Cut={}
-Cut[1]=Sim_area
-print geom_counter
-for i in range(1,geom_counter+1,1):
-    Cut[i+1]=FreeCAD.activeDocument().addObject("Part::Cut","Cut")
-    Cut[i+1].Base = Cut[i]
-    Cut[i+1].Tool = Main_Array[i]
-    FreeCAD.ActiveDocument.recompute()
-    print i
-'''
+
+
 WORKING_DOC.saveAs(FREECAD_DOC_PATH+FREECAD_DOC_NAME+FREECAD_DOC_EXTENSION) 
 
