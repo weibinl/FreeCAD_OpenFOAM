@@ -35,8 +35,8 @@ FreeCAD.ActiveDocument=FreeCAD.getDocument(FREECAD_DOC_NAME)
 PostDiameter=21.0
 LateralGap=17.0
 DownstreamGap=17.0
-TiltRatio=42.0 #lateral displacement vs lateral movement per bump, or # of rows required to displace one post in column
-ColumnNumber=5 #one side, we built the symmetric model about the center bypass channel to reduce the required calculation time, also this is the number of channel, the post number should be ColumnNumber-1, count from the top
+TiltRatio=4.0 #lateral displacement vs lateral movement per bump, or # of rows required to displace one post in column
+ColumnNumber=3 #one side, we built the symmetric model about the center bypass channel to reduce the required calculation time, also this is the number of channel, the post number should be ColumnNumber-1, count from the top
 RowNumber=int(TiltRatio)
 MinimumBypassChannelWidth=25.0
 LateralDisplacementPerRow=(DownstreamGap+PostDiameter)/float(TiltRatio)
@@ -56,7 +56,7 @@ Sim_area = FreeCAD.getDocument(FREECAD_DOC_NAME).addObject('Part::Extrusion', 'S
 Sim_area.Base = line
 Sim_area.DirMode = "Normal"
 Sim_area.DirLink = None
-Sim_area.LengthFwd = 1.000000000000000
+Sim_area.LengthFwd = 3.000000000000000
 Sim_area.LengthRev = 0.000000000000000
 Sim_area.Solid = True
 Sim_area.Reversed = False
@@ -87,7 +87,7 @@ Main_Array[geom_counter+1] = FreeCAD.getDocument(FREECAD_DOC_NAME).addObject('Pa
 Main_Array[geom_counter+1].Base = Array
 Main_Array[geom_counter+1].DirMode = "Normal"
 Main_Array[geom_counter+1].DirLink = None
-Main_Array[geom_counter+1].LengthFwd = 1.000000000000000
+Main_Array[geom_counter+1].LengthFwd = 3.000000000000000
 Main_Array[geom_counter+1].LengthRev = 0.000000000000000
 Main_Array[geom_counter+1].Solid = True
 Main_Array[geom_counter+1].Reversed = False
@@ -108,7 +108,7 @@ for CN in range(1,ColumnNumber+1,1):
     Main_Array[geom_counter+1].Base = line
     Main_Array[geom_counter+1].DirMode = "Normal"
     Main_Array[geom_counter+1].DirLink = None
-    Main_Array[geom_counter+1].LengthFwd = 1.000000000000000
+    Main_Array[geom_counter+1].LengthFwd = 3.000000000000000
     Main_Array[geom_counter+1].LengthRev = 0.000000000000000
     Main_Array[geom_counter+1].Solid = True
     Main_Array[geom_counter+1].Reversed = False
@@ -250,7 +250,7 @@ for i in range(1,RowNumber/2,1):
 for i in range(1,RowNumber/2,1): 
     xpos=WallChannelWidth[RowNumber/2-i]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)+LateralDisplacementPerRow*float(i)
     ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*float(i-1)-PostDiameter/2-DownstreamGap
-    width=50
+    width=150
     heigh=PostDiameter*1.5+DownstreamGap*2
     BypassWidthByOrder[RowNumber]=ByPassWidth[1]
     BypassWidthByOrder[i]=ByPassWidth[i]
@@ -299,7 +299,7 @@ for i in range (1,RowNumber/2+1,1):
 for i in range(1,RowNumber/2+1,1):
     xpos=WallChannelWidth[RowNumber-i+1]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-2)+LateralDisplacementPerRow*(i+RowNumber/2-1)
     ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber/2-2+i)
-    width=50
+    width=150
     heigh=PostDiameter*1.5+DownstreamGap
     points=[FreeCAD.Vector(xpos,ypos,0.0),FreeCAD.Vector(xpos+width,ypos,0.0),FreeCAD.Vector(xpos+width,ypos+heigh,0.0),FreeCAD.Vector(xpos,ypos+heigh,0.0)]
     line = Draft.makeWire(points,closed=True,face=False,support=None)
@@ -344,7 +344,7 @@ geom_counter=geom_counter+1
 
 xpos=WallChannelWidth[RowNumber/2]+PostDiameter+XPosFirstPost+(PostDiameter+LateralGap)*(ColumnNumber-1)
 ypos=YPosFirstPost+(PostDiameter+DownstreamGap)*(RowNumber-1)
-width=50
+width=150
 heigh=PostDiameter*1.5+DownstreamGap
 points=[FreeCAD.Vector(xpos,ypos,0.0),FreeCAD.Vector(xpos+width,ypos,0.0),FreeCAD.Vector(xpos+width,ypos+heigh,0.0),FreeCAD.Vector(xpos,ypos+heigh,0.0)]
 line = Draft.makeWire(points,closed=True,face=False,support=None)

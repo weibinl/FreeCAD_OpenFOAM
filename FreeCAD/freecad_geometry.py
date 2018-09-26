@@ -928,4 +928,9 @@ CfdTools.movePolyMesh(case_folder)
 os.system("cd /tmp")
 os.system("cp -r /tmp/case/ /home/weibin/freecad_create_openfoam/")
 #start the simulation
+case="/home/weibin/freecad_create_openfoam/case"
+from PyFoam . Applications . Decomposer import Decomposer
+from PyFoam . Applications . Runner import Runner
+from PyFoam . Applications . PlotRunner import PlotRunner
+#Runner (args=["--progress","Decomposer","proc",8,"-case",case])
 os.system("cd /home/weibin/freecad_create_openfoam/case && bash Allrun")
